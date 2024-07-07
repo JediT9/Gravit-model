@@ -31,7 +31,7 @@ class Body:
         """Update the position values using the velocities"""
         self.position_x += self.velocity_x * time_change
         self.position_y += self.velocity_y * time_change
-        if iterations % 30 == 0:
+        if iterations % 1 == 0:
             self.past_positions.append((self.position_x, self.position_y))
 
     def accelerate(self, time_change: float):
@@ -73,9 +73,10 @@ def plot_positions_initial(bodies_to_plot: list[Body]) -> None:
     """Plot the positions of the bodies"""
     plt.cla()
     for body_to_plot in bodies_to_plot:
-        plt.plot(body_to_plot.position_x, body_to_plot.position_y, marker="o")
+        plt.plot(body_to_plot.position_x, body_to_plot.position_y, marker="o", label=body_to_plot.name)
         plt.plot([position[0] for position in list(body_to_plot.past_positions)],
                  [position[1] for position in list(body_to_plot.past_positions)])
+    plt.legend(loc="upper left")
     plt.draw()
     plt.pause(0.000001)
 
@@ -114,9 +115,9 @@ for iteration in range(repeats):
     start = time.time()
     update_forces(body_pairs)
     for body_to_move_index in range(len(bodies)):
-        bodies[body_to_move_index].accelerate(8640)
-        bodies[body_to_move_index].move(8640, iteration)
-        if iteration % 30000 == 0:
+        bodies[body_to_move_index].accelerate(100)
+        bodies[body_to_move_index].move(100, iteration)
+        if iteration % 50 == 0:
             plot_positions_initial(bodies)
     finish = time.time()
     times.append((iteration, finish - start))
