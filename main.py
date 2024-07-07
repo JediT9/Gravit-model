@@ -24,6 +24,7 @@ class Body:
     velocity_y: float
     position_x: float
     position_y: float
+    resolution: float
     past_positions: list[tuple[float, float]] = dataclasses.field(default_factory=list)
     forces: list[tuple[float, float]] = dataclasses.field(default_factory=list)
 
@@ -59,14 +60,15 @@ class Body:
         return force_x, force_y
 
 
-def update_forces(pairs_to_calc: list[tuple[Body, Body]]) -> None:
+def update_forces(pairs_to_calc: list[tuple[Body, Body, float]], iteration_number: int) -> None:
     """Sum the forces acting on a body"""
     for pair in pairs_to_calc:
-        add_force: tuple[float, float] = pair[0].calculate_force(pair[1])
-        total_x = add_force[0]
-        total_y = add_force[1]
-        pair[0].forces.append((total_x, total_y))
-        pair[1].forces.append((-1 * total_x, -1 * total_y))
+        if iteration_number % pair[2] == 0:
+            add_force: tuple[float, float] = pair[0].calculate_force(pair[1])
+            total_x = add_force[0]
+            total_y = add_force[1]
+            pair[0].forces.append((total_x, total_y))
+            pair[1].forces.append((-1 * total_x, -1 * total_y))
 
 
 def plot_positions_initial(bodies_to_plot: list[Body]) -> None:
@@ -81,27 +83,40 @@ def plot_positions_initial(bodies_to_plot: list[Body]) -> None:
     plt.pause(0.000001)
 
 
-def read_input_bodies() -> tuple[list[tuple[Body, Body]], list[Body]]:
+def read_input_bodies() -> tuple[list[tuple[Body, Body, float]], list[Body]]:
     """Get the body info from the file"""
     current_bodies: list[Body] = []
-    force_pairs: list[tuple[Body, Body]] = []
+    force_pairs: list[tuple[Body, Body, float]] = []
     file_contents = open("input_bodies.csv")
     for line in file_contents:
         separated_body: list[str] = line[:-1].split(",")
         if separated_body[0] != "name" and separated_body != [""]:
             new_body = Body(separated_body[0], eval(separated_body[1]), eval(separated_body[2]),
-                            eval(separated_body[3]), eval(separated_body[4]), eval(separated_body[5]))
+                            eval(separated_body[3]), eval(separated_body[4]), eval(separated_body[5]),
+                            eval(separated_body[6]))
             for pair in current_bodies:
-                force_pairs.append((new_body, pair))
+                force_pairs.append((new_body, pair, min([new_body.resolution, pair.resolution])))
             current_bodies.append(new_body)
     return force_pairs, current_bodies
 
 
+def main_loop(iterations: int, time_per_iteration: float, force_pairs: list[tuple[Body, Body, float]],
+              simulation_bodies: list[Body]) -> None:
+    """Run the main loop of the simulation."""
+    for iteration in range(iterations):
+        update_forces(force_pairs, iteration)
+        for body_to_move_index in range(len(simulation_bodies)):
+            simulation_bodies[body_to_move_index].accelerate(time_per_iteration)
+            simulation_bodies[body_to_move_index].move(time_per_iteration, iteration)
+            if iteration % 500000000000000 == 0:
+                plot_positions_initial(bodies)
+
+
 programme_start = time.time()
 
-repeats: int = 10000000
-bodies_tuple: tuple[list[tuple[Body, Body]], list[Body]] = read_input_bodies()
-body_pairs: list[tuple[Body, Body]] = bodies_tuple[0]
+repeats: int = 100000
+bodies_tuple: tuple[list[tuple[Body, Body, float]], list[Body]] = read_input_bodies()
+body_pairs: list[tuple[Body, Body, float]] = bodies_tuple[0]
 bodies: list[Body] = bodies_tuple[1]
 
 matplotlib.use('TkAgg')
@@ -109,27 +124,10 @@ plt.axes()
 plt.ion()
 plt.show()
 
-times: list[tuple[float, float]] = []
-
-for iteration in range(repeats):
-    start = time.time()
-    update_forces(body_pairs)
-    for body_to_move_index in range(len(bodies)):
-        bodies[body_to_move_index].accelerate(100)
-        bodies[body_to_move_index].move(100, iteration)
-        if iteration % 50 == 0:
-            plot_positions_initial(bodies)
-    finish = time.time()
-    times.append((iteration, finish - start))
+main_loop(repeats, 1000, body_pairs, bodies)
 
 programme_finish = time.time()
 print(programme_finish - programme_start)
-
-plt.cla()
-plt.plot([position[0] for position in times],
-         [position[1] for position in times])
-plt.draw()
-plt.pause(0.00001)
 
 # plot_positions_initial(bodies)
 print([len(body.past_positions) for body in bodies])
