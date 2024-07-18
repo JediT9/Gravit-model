@@ -24,7 +24,6 @@ class Body:
     velocity_y: float
     position_x: float
     position_y: float
-    resolution: float
     past_positions: list[tuple[float, float]] = dataclasses.field(default_factory=list)
     forces: dict[str, tuple[float, float]] = dataclasses.field(default_factory=dict)
 
@@ -125,8 +124,7 @@ def read_input_bodies() -> tuple[list[BodyPair], list[Body]]:
         separated_body: list[str] = line[:-1].split(",")
         if separated_body[0] != "name" and separated_body != [""]:
             new_body = Body(separated_body[0], eval(separated_body[1]), eval(separated_body[2]),
-                            eval(separated_body[3]), eval(separated_body[4]), eval(separated_body[5]),
-                            eval(separated_body[6]))
+                            eval(separated_body[3]), eval(separated_body[4]), eval(separated_body[5]))
             for pair in current_bodies:
                 force_pairs.append(BodyPair(new_body, pair))
             current_bodies.append(new_body)
@@ -141,13 +139,13 @@ def main_loop(iterations: int, time_per_iteration: float, force_pairs: list[Body
         for body_to_move_index in range(len(simulation_bodies)):
             simulation_bodies[body_to_move_index].accelerate(time_per_iteration)
             simulation_bodies[body_to_move_index].move(time_per_iteration, iteration)
-            if iteration % 500000000000000 == 0:
+            if iteration % 1000 == 0:
                 plot_positions_initial(bodies)
 
 
 programme_start = time.time()
 
-simulated_time: int = 100000
+simulated_time: int = 10000000000
 bodies_tuple: tuple[[BodyPair], list[Body]] = read_input_bodies()
 body_pairs: list[BodyPair] = bodies_tuple[0]
 bodies: list[Body] = bodies_tuple[1]
@@ -157,7 +155,7 @@ plt.axes()
 plt.ion()
 plt.show()
 
-main_loop(simulated_time, 1000, body_pairs, bodies)
+main_loop(simulated_time, 0.1, body_pairs, bodies)
 
 programme_finish = time.time()
 print(programme_finish - programme_start)
