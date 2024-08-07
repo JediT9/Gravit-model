@@ -1,0 +1,5 @@
+Simulated time: 10000000
+Time per iteration: 1
+Iterations per graph update: 10000
+Evaluate priority frequency: 100
+Add to past positions: 100

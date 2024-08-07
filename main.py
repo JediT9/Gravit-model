@@ -47,13 +47,13 @@ class Body:
             y_forces.append(force_tuple[1])
         return math.sqrt((sum(x_forces)**2 + sum(y_forces)**2))
 
-    def move(self, current_iteration: float, time_change_per_iteration: float):
+    def move(self, current_iteration: float, time_change_per_iteration: float, add_pos_frequency: int):
         """Update the position values using the velocities"""
         time_past = (current_iteration - self.last_moved) * time_change_per_iteration
         self.last_moved = int(current_iteration)
         self.position_x += self.velocity_x * time_past
         self.position_y += self.velocity_y * time_past
-        if current_iteration % 100 == 0:
+        if current_iteration % add_pos_frequency == 0:
             self.past_positions.append((self.position_x, self.position_y))
 
     def accelerate(self, time_change_per_iteration: float, current_iteration):
@@ -89,7 +89,7 @@ class BodyPair:
     body_2: Body
     priority: float = 1
 
-    def calculate_forces(self, time_past: float, iteration_size: float) -> bool:
+    def calculate_forces(self, time_past: float, iteration_size: float, eval_prior_frequency: int) -> bool:
         """Calculate the forces on the bodies"""
         if time_past % self.priority == 0:
             add_force: tuple[float, float] = self.body_1.calculate_force(self.body_2)
@@ -97,7 +97,7 @@ class BodyPair:
             total_y = add_force[1]
             self.body_1.forces[self.body_2.name] = (total_x, total_y)
             self.body_2.forces[self.body_1.name] = (-1 * total_x, -1 * total_y)
-            if time_past % 100 == 0:
+            if time_past % eval_prior_frequency == 0:
                 self.evaluate_priority(iteration_size)
             return True
         else:
@@ -116,11 +116,12 @@ class BodyPair:
         print(self.priority)
 
 
-def update_forces(pairs_to_calc: list[BodyPair], iteration_number: float, iteration_size: float) -> list[Body]:
+def update_forces(pairs_to_calc: list[BodyPair], iteration_number: float, iteration_size: float,
+                  eval_prior_frequency: int) -> list[Body]:
     """Sum the forces acting on a body"""
     bodies_updated: list[Body] = []
     for pair in pairs_to_calc:
-        occurred = pair.calculate_forces(iteration_number, iteration_size)
+        occurred = pair.calculate_forces(iteration_number, iteration_size, eval_prior_frequency)
         if occurred:
             if pair.body_1 not in bodies_updated:
                 bodies_updated.append(pair.body_1)
@@ -154,39 +155,55 @@ def read_input_bodies() -> tuple[list[BodyPair], list[Body]]:
             for pair in current_bodies:
                 force_pairs.append(BodyPair(new_body, pair))
             current_bodies.append(new_body)
+    file_contents.close()
     return force_pairs, current_bodies
 
 
-def main_loop(time_to_sim: float, time_per_iteration: float, force_pairs: list[BodyPair]) -> None:
+def main_loop(time_to_sim: float, time_per_iteration: float, force_pairs: list[BodyPair], bodies: list[Body],
+              graph_update_frequency: int, eval_prior_frequency: int, add_pos_frequency: int) -> None:
     """Run the main loop of the simulation."""
     iteration_numbers = (x for x in range(0, int(time_to_sim / time_per_iteration)))
     for iteration in iteration_numbers:
-        iteration_bodies_to_move = update_forces(force_pairs, iteration, time_per_iteration)
+        iteration_bodies_to_move = update_forces(force_pairs, iteration, time_per_iteration, eval_prior_frequency)
         for body_to_move in iteration_bodies_to_move:
             body_to_move.accelerate(time_per_iteration, iteration)
-            body_to_move.move(iteration, time_per_iteration)
-            if iteration % 100000 == 0:
+            body_to_move.move(iteration, time_per_iteration, add_pos_frequency)
+            if iteration % graph_update_frequency == 0:
                 plot_positions_initial(bodies)
 
 
-programme_start = time.time()
+def read_file_settings() -> list[int]:
+    """Read the run settings off the txt file"""
+    file_contents = open("programme settings")
+    settings: dict[str, int] = {}
+    for line in file_contents:
+        settings[line.split(":")[0]] = int(line.split(":")[1])
+    return [settings["Simulated time"], settings["Time per iteration"], settings["Iterations per graph update"],
+            settings["Evaluate priority frequency"], settings["Add to past positions"]]
 
-simulated_time: int = 100000000
-bodies_tuple: tuple[[BodyPair], list[Body]] = read_input_bodies()
-body_pairs: list[BodyPair] = bodies_tuple[0]
-bodies: list[Body] = bodies_tuple[1]
 
-matplotlib.use('TkAgg')
-plt.axes()
-plt.ion()
-plt.show()
+def main() -> None:
+    """Start and run the main programme"""
+    settings = read_file_settings()
+    programme_start = time.time()
+    simulated_time: int = settings[0]
+    bodies_tuple: tuple[[BodyPair], list[Body]] = read_input_bodies()
+    body_pairs: list[BodyPair] = bodies_tuple[0]
+    bodies: list[Body] = bodies_tuple[1]
+    matplotlib.use('TkAgg')
+    plt.axes()
+    plt.ion()
+    plt.show()
 
-main_loop(simulated_time, 1, body_pairs)
+    main_loop(simulated_time, settings[1], body_pairs, bodies, settings[2], settings[3], settings[4])
 
-programme_finish = time.time()
-print(programme_finish - programme_start)
-plot_positions_initial(bodies)
-plt.pause(1)
+    programme_finish = time.time()
+    print(programme_finish - programme_start)
+    plot_positions_initial(bodies)
+    plt.pause(1)
+
+
+main()
 
 end = input()
 
