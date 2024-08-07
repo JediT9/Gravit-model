@@ -13,6 +13,16 @@ from typing import Self
 import time
 
 
+def round_to_time(iteration_size, number_to_round) -> float:
+    """Return the rounded value"""
+    base_number = number_to_round // iteration_size
+    if number_to_round % iteration_size >= iteration_size / 2:
+        base_number += 1
+    if base_number == 0:
+        base_number = 1
+    return base_number * iteration_size
+
+
 # Create main object class
 @dataclass
 class Body:
@@ -26,6 +36,7 @@ class Body:
     position_y: float
     past_positions: list[tuple[float, float]] = dataclasses.field(default_factory=list)
     forces: dict[str, tuple[float, float]] = dataclasses.field(default_factory=dict)
+    last_moved: int = 0
 
     def total_force(self) -> float:
         """Calculate the force magnitude on an object"""
@@ -36,15 +47,18 @@ class Body:
             y_forces.append(force_tuple[1])
         return math.sqrt((sum(x_forces)**2 + sum(y_forces)**2))
 
-    def move(self, time_change: float, iterations: int):
+    def move(self, current_iteration: float, time_change_per_iteration: float):
         """Update the position values using the velocities"""
-        self.position_x += self.velocity_x * time_change
-        self.position_y += self.velocity_y * time_change
-        if iterations % 1 == 0:
+        time_past = (current_iteration - self.last_moved) * time_change_per_iteration
+        self.last_moved = int(current_iteration)
+        self.position_x += self.velocity_x * time_past
+        self.position_y += self.velocity_y * time_past
+        if current_iteration % 100 == 0:
             self.past_positions.append((self.position_x, self.position_y))
 
-    def accelerate(self, time_change: float):
+    def accelerate(self, time_change_per_iteration: float, current_iteration):
         """Update the velocity of the body"""
+        time_past = (current_iteration - self.last_moved) * time_change_per_iteration
         x_forces = []
         y_forces = []
         for force_tuple in self.forces.values():
@@ -52,8 +66,8 @@ class Body:
             y_forces.append(force_tuple[1])
         x_acceleration: float = sum(x_forces) / self.mass
         y_acceleration: float = sum(y_forces) / self.mass
-        self.velocity_x += x_acceleration * time_change
-        self.velocity_y += y_acceleration * time_change
+        self.velocity_x += x_acceleration * time_past
+        self.velocity_y += y_acceleration * time_past
 
     def calculate_force(self, acting_body: Self) -> tuple[float, float]:
         """Calculate the force acting on a body from the central object"""
@@ -73,34 +87,46 @@ class BodyPair:
 
     body_1: Body
     body_2: Body
-    priority = 1
+    priority: float = 1
 
-    def calculate_forces(self, iteration):
+    def calculate_forces(self, time_past: float, iteration_size: float) -> bool:
         """Calculate the forces on the bodies"""
-        if iteration % self.priority == 0:
+        if time_past % self.priority == 0:
             add_force: tuple[float, float] = self.body_1.calculate_force(self.body_2)
             total_x = add_force[0]
             total_y = add_force[1]
             self.body_1.forces[self.body_2.name] = (total_x, total_y)
             self.body_2.forces[self.body_1.name] = (-1 * total_x, -1 * total_y)
+            if time_past % 100 == 0:
+                self.evaluate_priority(iteration_size)
+            return True
+        else:
+            return False
 
-        if iteration % 100 == 0:
-            self.evaluate_priority()
-
-    def evaluate_priority(self) -> None:
+    def evaluate_priority(self, min_time: float) -> None:
         """Update the priority level"""
         current_force: tuple[float, float] = self.body_1.calculate_force(self.body_2)
         force_magnitude: float = math.sqrt(current_force[0] ** 2 + current_force[1] ** 2)
-        body_1_condition: bool = force_magnitude / self.body_1.total_force() < 10 ** -4
-        body_2_condition: bool = force_magnitude / self.body_2.total_force() < 10 ** -4
-        if body_1_condition and body_2_condition:
-            self.priority = 50
+        body_1_acceleration: float = force_magnitude / self.body_1.mass
+        body_2_acceleration: float = force_magnitude / self.body_2.mass
+        # if body_1_acceleration < 10**-30 and body_2_acceleration < 10**-30:
+        self.priority = int(10 / (max([body_1_acceleration, body_2_acceleration])))
+        if self.priority == 0:
+            self.priority = 1
+        print(self.priority)
 
 
-def update_forces(pairs_to_calc: list[BodyPair], iteration_number: int) -> None:
+def update_forces(pairs_to_calc: list[BodyPair], iteration_number: float, iteration_size: float) -> list[Body]:
     """Sum the forces acting on a body"""
+    bodies_updated: list[Body] = []
     for pair in pairs_to_calc:
-        pair.calculate_forces(iteration_number)
+        occurred = pair.calculate_forces(iteration_number, iteration_size)
+        if occurred:
+            if pair.body_1 not in bodies_updated:
+                bodies_updated.append(pair.body_1)
+            if pair.body_2 not in bodies_updated:
+                bodies_updated.append(pair.body_2)
+    return bodies_updated
 
 
 def plot_positions_initial(bodies_to_plot: list[Body]) -> None:
@@ -131,21 +157,21 @@ def read_input_bodies() -> tuple[list[BodyPair], list[Body]]:
     return force_pairs, current_bodies
 
 
-def main_loop(iterations: int, time_per_iteration: float, force_pairs: list[BodyPair],
-              simulation_bodies: list[Body]) -> None:
+def main_loop(time_to_sim: float, time_per_iteration: float, force_pairs: list[BodyPair]) -> None:
     """Run the main loop of the simulation."""
-    for iteration in range(iterations):
-        update_forces(force_pairs, iteration)
-        for body_to_move_index in range(len(simulation_bodies)):
-            simulation_bodies[body_to_move_index].accelerate(time_per_iteration)
-            simulation_bodies[body_to_move_index].move(time_per_iteration, iteration)
-            if iteration % 1000 == 0:
+    iteration_numbers = (x for x in range(0, int(time_to_sim / time_per_iteration)))
+    for iteration in iteration_numbers:
+        iteration_bodies_to_move = update_forces(force_pairs, iteration, time_per_iteration)
+        for body_to_move in iteration_bodies_to_move:
+            body_to_move.accelerate(time_per_iteration, iteration)
+            body_to_move.move(iteration, time_per_iteration)
+            if iteration % 100000 == 0:
                 plot_positions_initial(bodies)
 
 
 programme_start = time.time()
 
-simulated_time: int = 10000000000
+simulated_time: int = 100000000
 bodies_tuple: tuple[[BodyPair], list[Body]] = read_input_bodies()
 body_pairs: list[BodyPair] = bodies_tuple[0]
 bodies: list[Body] = bodies_tuple[1]
@@ -155,12 +181,11 @@ plt.axes()
 plt.ion()
 plt.show()
 
-main_loop(simulated_time, 0.1, body_pairs, bodies)
+main_loop(simulated_time, 1, body_pairs)
 
 programme_finish = time.time()
 print(programme_finish - programme_start)
 plot_positions_initial(bodies)
-print(bodies[-1].position_x, bodies[-1].position_y)
 plt.pause(1)
 
 end = input()
