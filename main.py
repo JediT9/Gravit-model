@@ -110,7 +110,7 @@ class BodyPair:
         body_1_acceleration: float = force_magnitude / self.body_1.mass
         body_2_acceleration: float = force_magnitude / self.body_2.mass
         # if body_1_acceleration < 10**-30 and body_2_acceleration < 10**-30:
-        self.priority = int(10 / (max([body_1_acceleration, body_2_acceleration])))
+        self.priority = int(100 * (1000 * max([body_1_acceleration, body_2_acceleration])) ** (-1/2) + 1)
         if self.priority == 0:
             self.priority = 1
         print(self.priority)
