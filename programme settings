@@ -1,5 +1,6 @@
-Simulated time: 10000000
+Simulated time: 1000000000
 Time per iteration: 1
 Iterations per graph update: 10000
-Evaluate priority frequency: 100
+Evaluate priority frequency: 1000
 Add to past positions: 100
+Plot size: 2*10**7

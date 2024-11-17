@@ -24,7 +24,7 @@ def round_to_time(iteration_size, number_to_round) -> float:
 
 
 # Create main object class
-@dataclass
+@dataclass(kw_only=True)
 class Body:
     """The main class that carries all the functions and methods """
 
@@ -55,6 +55,8 @@ class Body:
         self.position_y += self.velocity_y * time_past
         if current_iteration % add_pos_frequency == 0:
             self.past_positions.append((self.position_x, self.position_y))
+            if len(self.past_positions) > 50000:
+                self.past_positions.__delitem__(0)
 
     def accelerate(self, time_change_per_iteration: float, current_iteration):
         """Update the velocity of the body"""
@@ -79,6 +81,16 @@ class Body:
         force_x: float = force * math.cos(angle)
         force_y: float = force * math.sin(angle)
         return force_x, force_y
+
+
+@dataclass(kw_only=True)
+class Rocket(Body):
+    """Stores the additional information required for a rocket"""
+
+    thrust: int
+    burns: list[tuple[int, int, int]] = dataclasses.field(default_factory=list)
+
+    # Define associated functions
 
 
 @dataclass
@@ -113,13 +125,21 @@ class BodyPair:
         self.priority = int(100 * (1000 * max([body_1_acceleration, body_2_acceleration])) ** (-1/2) + 1)
         if self.priority == 0:
             self.priority = 1
-        print(self.priority)
 
 
 def update_forces(pairs_to_calc: list[BodyPair], iteration_number: float, iteration_size: float,
-                  eval_prior_frequency: int) -> list[Body]:
+                  eval_prior_frequency: int, rockets: list[Rocket]) -> list[Body]:
     """Sum the forces acting on a body"""
     bodies_updated: list[Body] = []
+    for rocket in rockets:
+        for burn in rocket.burns:
+            if burn[0] <= iteration_number * iteration_size < burn[0] + burn[1]:
+                bodies_updated.append(rocket)
+                burn_force: tuple[float, float] = (rocket.thrust * math.cos(math.radians(burn[-1])),
+                                                   rocket.thrust * math.sin(math.radians(burn[-1])))
+                rocket.forces["thrust"] = burn_force
+            else:
+                rocket.forces["thrust"] = (0, 0)
     for pair in pairs_to_calc:
         occurred = pair.calculate_forces(iteration_number, iteration_size, eval_prior_frequency)
         if occurred:
@@ -130,13 +150,16 @@ def update_forces(pairs_to_calc: list[BodyPair], iteration_number: float, iterat
     return bodies_updated
 
 
-def plot_positions_initial(bodies_to_plot: list[Body]) -> None:
+def plot_positions(bodies_to_plot: list[Body], size: int) -> None:
     """Plot the positions of the bodies"""
+    plot_size_points: list[tuple[int, int]] = [(0, size), (size, 0), (0, -1 * size), (-1 * size, 0)]
     plt.cla()
     for body_to_plot in bodies_to_plot:
         plt.plot(body_to_plot.position_x, body_to_plot.position_y, marker="o", label=body_to_plot.name)
         plt.plot([position[0] for position in list(body_to_plot.past_positions)],
                  [position[1] for position in list(body_to_plot.past_positions)])
+    for point in plot_size_points:
+        plt.plot(point[0], point[1], marker="")
     plt.legend(loc="upper left")
     plt.draw()
     plt.pause(0.000001)
@@ -150,26 +173,47 @@ def read_input_bodies() -> tuple[list[BodyPair], list[Body]]:
     for line in file_contents:
         separated_body: list[str] = line[:-1].split(",")
         if separated_body[0] != "name" and separated_body != [""]:
-            new_body = Body(separated_body[0], eval(separated_body[1]), eval(separated_body[2]),
-                            eval(separated_body[3]), eval(separated_body[4]), eval(separated_body[5]))
+            if len(separated_body) == 6:
+                new_body = Body(name=separated_body[0], mass=eval(separated_body[1]),
+                                velocity_x=eval(separated_body[2]), velocity_y=eval(separated_body[3]),
+                                position_x=eval(separated_body[4]), position_y=eval(separated_body[5]))
+            else:
+                new_body = Rocket(name=separated_body[0], mass=eval(separated_body[1]),
+                                  velocity_x=eval(separated_body[2]), velocity_y=eval(separated_body[3]),
+                                  position_x=eval(separated_body[4]), position_y=eval(separated_body[5]),
+                                  thrust=eval(separated_body[6]),
+                                  burns=[(int(eval((burn.split("$")[0]))),
+                                         int(eval((burn.split("$")[1]))),
+                                         int(math.degrees(eval(burn.split("$")[2])))) for burn in separated_body[-1].split("|")])
             for pair in current_bodies:
-                force_pairs.append(BodyPair(new_body, pair))
+                if type(new_body).__name__ == "Body" and type(pair).__name__ == "Body":
+                    force_pairs.append(BodyPair(new_body, pair))
+                elif type(new_body).__name__ == "Rocket" and type(pair).__name__ == "Body":
+                    force_pairs.append(BodyPair(pair, new_body))
+                elif type(pair).__name__ == "Rocket" and type(new_body).__name__ == "Body":
+                    force_pairs.append(BodyPair(new_body, pair))
             current_bodies.append(new_body)
     file_contents.close()
     return force_pairs, current_bodies
 
 
-def main_loop(time_to_sim: float, time_per_iteration: float, force_pairs: list[BodyPair], bodies: list[Body],
-              graph_update_frequency: int, eval_prior_frequency: int, add_pos_frequency: int) -> None:
+def main_loop(time_to_sim: float, time_per_iteration: float, force_pairs: list[BodyPair], bodies: list[Body | Rocket],
+              graph_update_frequency: int, eval_prior_frequency: int, add_pos_frequency: int,
+              plot_size: int) -> None:
     """Run the main loop of the simulation."""
+    rockets = []
+    for body in bodies:
+        if type(body).__name__ == "Rocket":
+            rockets.append(body)
     iteration_numbers = (x for x in range(0, int(time_to_sim / time_per_iteration)))
     for iteration in iteration_numbers:
-        iteration_bodies_to_move = update_forces(force_pairs, iteration, time_per_iteration, eval_prior_frequency)
+        iteration_bodies_to_move = update_forces(force_pairs, iteration, time_per_iteration, eval_prior_frequency,
+                                                 rockets)
         for body_to_move in iteration_bodies_to_move:
             body_to_move.accelerate(time_per_iteration, iteration)
             body_to_move.move(iteration, time_per_iteration, add_pos_frequency)
             if iteration % graph_update_frequency == 0:
-                plot_positions_initial(bodies)
+                plot_positions(bodies, plot_size)
 
 
 def read_file_settings() -> list[int]:
@@ -177,9 +221,9 @@ def read_file_settings() -> list[int]:
     file_contents = open("programme settings")
     settings: dict[str, int] = {}
     for line in file_contents:
-        settings[line.split(":")[0]] = int(line.split(":")[1])
+        settings[line.split(":")[0]] = int(eval(line.split(":")[1]))
     return [settings["Simulated time"], settings["Time per iteration"], settings["Iterations per graph update"],
-            settings["Evaluate priority frequency"], settings["Add to past positions"]]
+            settings["Evaluate priority frequency"], settings["Add to past positions"], settings["Plot size"]]
 
 
 def main() -> None:
@@ -194,12 +238,12 @@ def main() -> None:
     plt.axes()
     plt.ion()
     plt.show()
-
-    main_loop(simulated_time, settings[1], body_pairs, bodies, settings[2], settings[3], settings[4])
+    main_loop(simulated_time, settings[1], body_pairs, bodies, settings[2], settings[3], settings[4], settings[5])
 
     programme_finish = time.time()
     print(programme_finish - programme_start)
-    plot_positions_initial(bodies)
+    plot_positions(bodies, settings[5])
+    print(bodies[1].position_x, bodies[1].position_y)
     plt.pause(1)
 
 
